@@ -1,6 +1,6 @@
 package com.sms.query_carrier.controller;
 
-import lombok.extern.slf4j.Slf4j;
+import okhttp3.Authenticator;
 import okhttp3.Credentials;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
@@ -9,32 +9,20 @@ import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import javax.annotation.PostConstruct;
-import java.io.BufferedWriter;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.net.Proxy;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.nio.file.StandardOpenOption;
-import java.time.ZoneId;
-import java.time.ZonedDateTime;
-import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
@@ -90,14 +78,14 @@ public class QueryCarrierController {
                     appendCarrierCacheToCsv(true);
                 },
                 10,              // 初始延迟（0 表示立即执行）
-                30,             // 间隔时间
+                60,             // 间隔时间
                 TimeUnit.MINUTES
         );
     }
 
     public static void appendCarrierCacheToCsv(boolean auto) {
         try {
-            Path filePath = Paths.get(filePathStr);
+           /* Path filePath = Paths.get(filePathStr);
 
             // 确保父目录存在
             Path parent = filePath.getParent();
@@ -129,7 +117,12 @@ public class QueryCarrierController {
                 }
             }
             log.info("afer count:{}", count);
-            QueryCarrierController.carrierCache.clear();
+            QueryCarrierController.carrierCache.clear();*/
+
+            if (QueryCarrierController.carrierCache.size() > 10000) {
+                QueryCarrierController.carrierCache.clear();
+            }
+
         } catch (Exception e) {
             log.error("appendCarrierCacheToCsv error", e);
         }
@@ -248,7 +241,20 @@ public class QueryCarrierController {
         // 2. 动态设置代理
         ProxyNode proxyNode = ProxyPool.next();
         Proxy proxy = new Proxy(Proxy.Type.HTTP, new InetSocketAddress(proxyNode.getHost(), proxyNode.getPort()));
-        OkHttpClient clientWithProxy = client.newBuilder().proxy(proxy).build();
+
+        Authenticator proxyAuthenticator = (route, response) -> {
+            String credential = Credentials.basic(
+                    proxyNode.getUsername(),
+                    proxyNode.getPassword()
+            );
+            return response.request().newBuilder()
+                    .header("Proxy-Authorization", credential)
+                    .build();
+        };
+        OkHttpClient clientWithProxy = client.newBuilder()
+                .proxy(proxy)
+                .proxyAuthenticator(proxyAuthenticator)
+                .build();
 
         Request request = new Request.Builder()
                 .url("https://www.anywho.com/phone/" + phoneNumber)
